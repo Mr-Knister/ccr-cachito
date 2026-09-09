@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cachito San Juan XXIII</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="entry-layout" id="loginPanel">
+      <div class="brand-block">
+        <span class="eyebrow">Mesa local</span>
+        <h1><span>Cachito</span><span>San Juan XXIII</span></h1>
+        <p>Dados, vaso, grupos, bots y retos por equipos en una version lista para crecer a salas online.</p>
+      </div>
+
+      <form class="access-card" id="loginForm">
+        <span class="eyebrow">Acceso</span>
+        <h2>Entrar a la mesa</h2>
+        <label>
+          Username
+          <input id="usernameInput" autocomplete="username" value="cesar">
+        </label>
+        <label>
+          Nombre visible
+          <input id="displayNameInput" autocomplete="name" value="Cesar">
+        </label>
+        <button class="primary-action" type="submit">Acceder</button>
+      </form>
+    </section>
+
+    <section class="entry-layout hidden" id="lobbyPanel">
+      <div class="brand-block">
+        <span class="eyebrow">Lobby</span>
+        <h1><span>Cachito</span><span>San Juan XXIII</span></h1>
+        <p>Escoge una sala, crea una nueva mesa o prepara bots antes de empezar.</p>
+      </div>
+
+      <section class="lobby-card">
+        <header class="lobby-user-card">
+          <div>
+            <span class="eyebrow">Usuario</span>
+            <h2 id="userTitle">-</h2>
+            <p id="userMeta">-</p>
+          </div>
+          <button id="logoutBtn" type="button">Salir</button>
+        </header>
+
+        <section class="play-hub">
+          <div class="mode-tabs" role="tablist" aria-label="Modo de juego">
+            <button class="active" id="practiceModeBtn" type="button">Practica</button>
+            <button id="multiplayerModeBtn" type="button" disabled>Multijugador</button>
+          </div>
+
+          <section class="mode-panel" id="practicePanel">
+            <div class="mode-panel-head">
+              <span class="eyebrow">Practica</span>
+              <p>Partida local rapida con valores por defecto.</p>
+            </div>
+            <div class="practice-actions">
+              <button class="primary-action" id="practiceIndividualBtn" type="button">Individual</button>
+              <button id="practiceTeamsBtn" type="button">Equipos</button>
+            </div>
+          </section>
+
+          <section class="mode-panel multiplayer-panel hidden" id="multiplayerPanel" aria-disabled="true">
+            <div class="mode-panel-head">
+              <span class="eyebrow">Multijugador</span>
+              <p>Salas listas para activar cuando habilitemos el modo online.</p>
+            </div>
+            <button class="primary-action" id="openCreateRoomBtn" type="button">Crear sala</button>
+
+            <section>
+              <div class="section-head">
+                <h3>Salas</h3>
+                <span id="roomCountLabel">0 salas</span>
+              </div>
+              <div class="rooms-list" id="roomsList"></div>
+            </section>
+          </section>
+        </section>
+      </section>
+    </section>
+
+    <section class="room-panel hidden" id="roomPanel">
+      <header class="topbar room-topbar">
+        <div>
+          <span class="eyebrow" id="roomVisibilityLabel">Sala</span>
+          <h2 id="roomTitle">Sala</h2>
+        </div>
+        <section class="status-bar">
+          <div>
+            <span>Modalidad</span>
+            <p id="roomModeText">-</p>
+          </div>
+          <div>
+            <span>Meta</span>
+            <p id="roomTargetText">-</p>
+          </div>
+          <div>
+            <span>Dados</span>
+            <p id="roomDiceText">-</p>
+          </div>
+          <div>
+            <span>Sentido</span>
+            <p id="roomDirectionText">-</p>
+          </div>
+        </section>
+        <div class="topbar-actions room-actions">
+          <button id="backToLobbyBtn" type="button">Lobby</button>
+          <button class="primary-action" id="startMatchBtn" type="button" disabled>Empezar</button>
+        </div>
+      </header>
+
+      <section class="waiting-room">
+        <aside class="room-summary">
+          <h3>Preparacion</h3>
+          <p id="roomStatusText">Completa los puestos para empezar.</p>
+          <p class="room-note">En esta version local, usa bots para una partida automatica. Los jugadores quedan como puestos listos para Firebase.</p>
+          <div class="rules-mini">
+            <span>Nombres</span>
+            <b id="roomNamesText">-</b>
+          </div>
+        </aside>
+        <section class="seats-board" id="seatsBoard"></section>
+      </section>
+    </section>
+
+    <section class="game-panel hidden" id="gamePanel">
+      <header class="topbar">
+        <div>
+          <span class="eyebrow" id="modeLabel">Partida</span>
+          <h2 id="roundTitle">Ronda 1</h2>
+        </div>
+        <section class="status-bar">
+          <div>
+            <span>Estado</span>
+            <p id="statusText">Esperando inicio.</p>
+          </div>
+          <div class="current-mark" id="currentMark">
+            <span>Jugada activa</span>
+            <strong>Sin jugada</strong>
+          </div>
+          <div class="rules-mini">
+            <span>Orden</span>
+            <b>2 &lt; 3 &lt; 4 &lt; 5 &lt; 6 &lt; 1</b>
+          </div>
+        </section>
+        <div class="topbar-tools">
+          <div class="speed-switch" id="speedInput" role="radiogroup" aria-label="Velocidad de juego">
+            <button type="button" data-speed="slow">L</button>
+            <button class="active" type="button" data-speed="normal">N</button>
+            <button type="button" data-speed="fast">R</button>
+          </div>
+        </div>
+        <details class="topbar-menu">
+          <summary aria-label="Acciones">≡</summary>
+          <div class="topbar-actions">
+            <button id="logToggleBtn" type="button">Ver bitacora</button>
+            <button id="resetMatchBtn" type="button">Resetear</button>
+            <button id="exitGameBtn" type="button">Sala</button>
+          </div>
+        </details>
+      </header>
+
+      <section class="table-area">
+        <aside class="players-side left-side">
+          <h3 id="leftPlayersTitle">Jugadores</h3>
+          <div class="side-list" id="leftPlayers"></div>
+        </aside>
+
+        <section class="felt-table">
+          <div class="cup-stage" id="cupStage">
+            <aside class="leader-mark hidden" id="leaderMark" aria-live="polite"></aside>
+            <button class="next-round-float primary-action hidden" id="nextRoundStageBtn" type="button">Siguiente ronda</button>
+            <section class="dice-zone rolling-zone">
+              <span>Para lanzar</span>
+              <div class="dice-row split-row" id="rollingDiceRow"></div>
+            </section>
+            <div class="cup" id="cup">
+              <div class="cup-mouth"></div>
+              <div class="cup-body"></div>
+            </div>
+            <section class="dice-zone held-zone">
+              <span>Guardados</span>
+              <div class="dice-row split-row" id="heldDiceRow"></div>
+            </section>
+            <div class="cachito-burst" id="cachitoBurst" aria-hidden="true">
+              <span>CACHITO</span>
+              <strong id="cachitoWinner">Jugador</strong>
+              <span>CACHITO</span>
+            </div>
+            <div class="champion-burst" id="championBurst" aria-hidden="true">
+              <span>CAMPEON</span>
+              <strong id="championWinner">Jugador</strong>
+              <small id="championMeta">5 victorias</small>
+            </div>
+          </div>
+
+          <div class="turn-console">
+            <div class="turn-info">
+              <span class="eyebrow">Turno actual</span>
+              <h3 id="turnPlayer">-</h3>
+              <p id="turnHint">Lanza los dados para empezar.</p>
+            </div>
+            <div class="turn-actions">
+              <button id="rollBtn" type="button">Lanzar</button>
+              <button id="standBtn" type="button" disabled>Plantarse</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="players-side right-side">
+          <h3 id="rightPlayersTitle">Jugadores</h3>
+          <div class="side-list" id="rightPlayers"></div>
+        </aside>
+      </section>
+
+      <section class="log-overlay hidden" id="logOverlay" aria-hidden="true">
+        <div class="log-panel">
+          <div class="modal-head">
+            <h3>Bitacora</h3>
+            <button id="logCloseBtn" type="button">Cerrar</button>
+          </div>
+          <ol id="logList"></ol>
+        </div>
+      </section>
+    </section>
+
+    <section class="modal hidden" id="createRoomModal" aria-hidden="true">
+      <form class="create-room-card" id="createRoomForm">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Nueva sala</span>
+            <h3>Crear partida</h3>
+          </div>
+          <button id="closeCreateRoomBtn" type="button">Cerrar</button>
+        </div>
+
+        <label>
+          Nombre de sala
+          <input id="roomNameInput" value="Sala San Juan">
+        </label>
+
+        <div class="form-row">
+          <label>
+            Tipo
+            <select id="roomVisibilityInput">
+              <option value="public">Publica</option>
+              <option value="private">Privada con clave</option>
+            </select>
+          </label>
+          <label>
+            Clave
+            <input id="roomPasswordInput" placeholder="Opcional">
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label>
+            Modalidad
+            <select id="roomModeInput">
+              <option value="classic">Todos contra todos</option>
+              <option value="teams">3 vs 3</option>
+            </select>
+          </label>
+          <label>
+            Dados
+            <input id="roomDiceInput" type="number" min="3" max="8" value="5">
+          </label>
+        </div>
+
+        <label>
+          Victorias para ganar
+          <input id="roomTargetWinsInput" type="number" min="1" max="20" value="5">
+        </label>
+
+        <label>
+          Sentido
+          <select id="roomDirectionInput">
+            <option value="right">Derecha</option>
+            <option value="left">Izquierda</option>
+          </select>
+        </label>
+
+        <section class="names-editor" id="singularNamesEditor"></section>
+
+        <button class="primary-action" type="submit">Crear partida</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

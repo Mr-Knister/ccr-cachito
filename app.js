@@ -79,6 +79,9 @@ const practicePanel = document.querySelector("#practicePanel");
 const multiplayerPanel = document.querySelector("#multiplayerPanel");
 const practiceIndividualBtn = document.querySelector("#practiceIndividualBtn");
 const practiceTeamsBtn = document.querySelector("#practiceTeamsBtn");
+const guideBtn = document.querySelector("#guideBtn");
+const guideModal = document.querySelector("#guideModal");
+const guideCloseBtn = document.querySelector("#guideCloseBtn");
 const openCreateRoomBtn = document.querySelector("#openCreateRoomBtn");
 const createRoomModal = document.querySelector("#createRoomModal");
 const closeCreateRoomBtn = document.querySelector("#closeCreateRoomBtn");
@@ -127,6 +130,8 @@ const cachitoWinner = document.querySelector("#cachitoWinner");
 const championBurst = document.querySelector("#championBurst");
 const championWinner = document.querySelector("#championWinner");
 const championMeta = document.querySelector("#championMeta");
+const turnArrow = document.querySelector("#turnArrow");
+const turnArrowPath = document.querySelector("#turnArrowPath");
 const rollBtn = document.querySelector("#rollBtn");
 const standBtn = document.querySelector("#standBtn");
 const newRoundBtn = document.querySelector("#newRoundBtn");
@@ -137,6 +142,7 @@ const revealDiceBtn = document.querySelector("#revealDiceBtn");
 const logCloseBtn = document.querySelector("#logCloseBtn");
 const logOverlay = document.querySelector("#logOverlay");
 const logList = document.querySelector("#logList");
+let turnArrowTimer = null;
 
 function randomDie() {
   return Math.floor(Math.random() * 6) + 1;
@@ -763,7 +769,7 @@ function handleClassicStand() {
     return;
   }
 
-  state.turnIndex = nextPlayerIndex(state.turnIndex);
+  moveTurnTo(nextPlayerIndex(state.turnIndex));
   resetTurn();
   renderAll();
   maybeRunAutomaticPlayer();
@@ -809,6 +815,44 @@ function nextPlayerIndex(index) {
   return (index + step + state.players.length) % state.players.length;
 }
 
+function moveTurnTo(nextIndex) {
+  const previousPlayerId = currentPlayer()?.id;
+  state.turnIndex = nextIndex;
+  const nextPlayerId = currentPlayer()?.id;
+  requestAnimationFrame(() => showTurnArrow(previousPlayerId, nextPlayerId));
+}
+
+function showTurnArrow(fromPlayerId, toPlayerId) {
+  if (!turnArrow || !turnArrowPath || !fromPlayerId || !toPlayerId || fromPlayerId === toPlayerId) return;
+  const fromCard = panels.game.querySelector(`[data-player-id="${fromPlayerId}"]`);
+  const toCard = panels.game.querySelector(`[data-player-id="${toPlayerId}"]`);
+  if (!fromCard || !toCard) return;
+
+  const from = fromCard.getBoundingClientRect();
+  const to = toCard.getBoundingClientRect();
+  const startX = from.left + from.width / 2;
+  const startY = from.top + from.height / 2;
+  const endX = to.left + to.width / 2;
+  const endY = to.top + to.height / 2;
+  const distanceX = endX - startX;
+  const curveLift = Math.max(46, Math.min(120, Math.abs(distanceX) * 0.22 + Math.abs(endY - startY) * 0.35));
+  const control1X = startX + distanceX * 0.34;
+  const control2X = startX + distanceX * 0.66;
+  const control1Y = startY - curveLift;
+  const control2Y = endY - curveLift;
+
+  turnArrow.setAttribute("viewBox", `0 0 ${window.innerWidth} ${window.innerHeight}`);
+  turnArrowPath.setAttribute("d", `M ${startX} ${startY} C ${control1X} ${control1Y}, ${control2X} ${control2Y}, ${endX} ${endY}`);
+  turnArrow.classList.remove("hidden", "show");
+  void turnArrow.offsetWidth;
+  turnArrow.classList.add("show");
+  clearTimeout(turnArrowTimer);
+  turnArrowTimer = setTimeout(() => {
+    turnArrow.classList.add("hidden");
+    turnArrow.classList.remove("show");
+  }, 950);
+}
+
 function otherTeam(team) {
   return team === "A" ? "B" : "A";
 }
@@ -824,7 +868,7 @@ function moveToNextTeamPlayer(team) {
     index = (index + step + state.players.length) % state.players.length;
     const player = state.players[index];
     if (player.team === team && !state.usedPlayers.has(player.id)) {
-      state.turnIndex = index;
+      moveTurnTo(index);
       resetTurn();
       renderAll();
       maybeRunAutomaticPlayer();
@@ -979,8 +1023,8 @@ function botThink() {
     return;
   }
 
-  const keepValues = new Set(result.parts);
-  const nextHeld = state.dice.map((value, index) => state.lockedHeld[index] || keepValues.has(value));
+  const scoringIndexes = scoringDiceIndexes({ result, dice: state.dice });
+  const nextHeld = state.dice.map((_, index) => state.lockedHeld[index] || scoringIndexes.has(index));
   state.botChoosingHeld = nextHeld.map((held, index) => held && !state.held[index]);
   renderAll();
   gameTimeout(() => {
@@ -991,7 +1035,9 @@ function botThink() {
     renderAll();
   }, 520);
   gameTimeout(() => {
-    if (isActiveGame(token) && currentPlayer().id === turnPlayerId) rollDice();
+    if (!isActiveGame(token) || currentPlayer().id !== turnPlayerId) return;
+    if (state.held.every(Boolean)) stand();
+    else rollDice();
   }, 1250);
 }
 
@@ -1062,6 +1108,7 @@ function renderPlayers() {
     const latest = [...state.results].reverse().find((entry) => entry.playerId === player.id);
     const hasPlayed = Boolean(latest);
     const liveEntry = livePlayerEntry(player);
+    const visibleEntry = liveEntry || latest;
     const frontDice = liveEntry
       ? renderOrderedMiniDice(liveEntry, state.held)
       : latest
@@ -1074,6 +1121,7 @@ function renderPlayers() {
     const roundWinner = state.roundOver && player.id === state.lastRoundWinnerId;
     const card = document.createElement("article");
     card.className = `player-card${player.type === "human" ? " is-you" : ""}${index === state.turnIndex && !state.roundOver ? " active" : ""}${starterRolling ? " starter-rolling" : ""}${starterCelebrating ? " starter-celebrating" : ""}${starterRank === 1 ? " starter-winner" : ""}${hasPlayed ? " played" : ""}${player.id === state.lastRoundWinnerId ? " crowned" : ""}${roundWinner ? " round-winner" : ""}`;
+    card.dataset.playerId = player.id;
     card.innerHTML = `
       <div class="crown" aria-hidden="true">&#9819;</div>
       <div class="card-face card-front">
@@ -1086,8 +1134,8 @@ function renderPlayers() {
           <span class="starter-die ${starterRank ? "ranked" : ""}" aria-label="${starterRank ? `Orden ${starterRank}` : starterValue ? `Sorteo ${starterValue}` : "Sorteo pendiente"}">${starterRank ? rankLabel(starterRank) : starterValue || "?"}</span>
         </div>
         <div class="player-line player-line-mark">
-          <span class="player-mark">${latest ? latest.result.label : "Sin jugada"}</span>
-          <span class="player-rolls">${latest ? `${latest.rolls} tiro${latest.rolls === 1 ? "" : "s"}` : ""}</span>
+          <span class="player-mark">${visibleEntry ? visibleEntry.result.label : "Sin jugada"}</span>
+          <span class="player-rolls">${visibleEntry ? `${visibleEntry.rolls} tiro${visibleEntry.rolls === 1 ? "" : "s"}` : ""}</span>
         </div>
         <div class="card-front-dice">${frontDice}</div>
       </div>
@@ -1137,10 +1185,13 @@ function renderOrderedMiniDice(entry, held = []) {
 
 function scoringDiceIndexes(entry) {
   const indexes = new Set();
-  const neededValues = [...entry.result.parts];
-  neededValues.forEach((partValue) => {
+  let remaining = entry.result.count;
+  const valuesToUse = [entry.result.value, ...entry.result.parts.filter((value) => value !== entry.result.value)];
+  valuesToUse.forEach((partValue) => {
     entry.dice.forEach((dieValue, index) => {
-      if (dieValue === partValue) indexes.add(index);
+      if (remaining <= 0 || indexes.has(index) || dieValue !== partValue) return;
+      indexes.add(index);
+      remaining -= 1;
     });
   });
   return indexes;
@@ -1302,6 +1353,11 @@ multiplayerModeBtn.addEventListener("click", () => {
 });
 practiceIndividualBtn.addEventListener("click", () => startPractice("classic"));
 practiceTeamsBtn.addEventListener("click", () => startPractice("teams"));
+guideBtn.addEventListener("click", () => openModal(guideModal));
+guideCloseBtn.addEventListener("click", () => closeModal(guideModal));
+guideModal.addEventListener("click", (event) => {
+  if (event.target === guideModal) closeModal(guideModal);
+});
 openCreateRoomBtn.addEventListener("click", () => openModal(createRoomModal));
 closeCreateRoomBtn.addEventListener("click", () => closeModal(createRoomModal));
 createRoomModal.addEventListener("click", (event) => {
@@ -1332,6 +1388,9 @@ speedInput.addEventListener("click", (event) => {
   if (!button) return;
   speedInput.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", item === button));
   updateSpeed();
+});
+topbarMenu?.addEventListener("click", (event) => {
+  if (event.target.closest("button")) topbarMenu.open = false;
 });
 document.addEventListener("click", (event) => {
   if (!topbarMenu?.open) return;

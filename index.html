@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cachito San Juan XXIII</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=guide-solid-1">
 </head>
 <body>
   <main class="app-shell">
@@ -20,11 +20,11 @@
         <h2>Entrar a la mesa</h2>
         <label>
           Username
-          <input id="usernameInput" autocomplete="username" value="cesar">
+          <input id="usernameInput" autocomplete="username" value="">
         </label>
         <label>
           Nombre visible
-          <input id="displayNameInput" autocomplete="name" value="Cesar">
+          <input id="displayNameInput" autocomplete="name" value="">
         </label>
         <button class="primary-action" type="submit">Acceder</button>
       </form>
@@ -58,6 +58,7 @@
               <span class="eyebrow">Practica</span>
               <p>Partida local rapida con valores por defecto.</p>
             </div>
+            <button class="guide-button" id="guideBtn" type="button">Guia</button>
             <div class="practice-actions">
               <button class="primary-action" id="practiceIndividualBtn" type="button">Individual</button>
               <button id="practiceTeamsBtn" type="button">Equipos</button>
@@ -128,6 +129,14 @@
     </section>
 
     <section class="game-panel hidden" id="gamePanel">
+      <svg class="turn-arrow hidden" id="turnArrow" aria-hidden="true">
+        <defs>
+          <marker id="turnArrowHead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z"></path>
+          </marker>
+        </defs>
+        <path id="turnArrowPath"></path>
+      </svg>
       <header class="topbar">
         <div>
           <span class="eyebrow" id="modeLabel">Partida</span>
@@ -289,8 +298,98 @@
         <button class="primary-action" type="submit">Crear partida</button>
       </form>
     </section>
+
+    <section class="modal hidden" id="guideModal" aria-hidden="true">
+      <article class="guide-panel">
+        <div class="modal-head">
+          <div>
+            <span class="eyebrow">Guia</span>
+            <h3>Como jugar Cachito</h3>
+          </div>
+          <button id="guideCloseBtn" type="button">Cerrar</button>
+        </div>
+
+        <div class="guide-content">
+          <section class="guide-section">
+            <div>
+              <h4>Objetivo</h4>
+              <p>Gana rondas formando la mejor jugada con tus dados. La partida termina cuando alguien llega a la meta de victorias.</p>
+            </div>
+            <div class="guide-visual guide-score-card">
+              <span>A superar</span>
+              <strong>Lucia</strong>
+              <b>4 as</b>
+              <div class="guide-dice-row">
+                <i>1</i><i>2</i><i>2</i><i>1</i><i>6</i>
+              </div>
+            </div>
+          </section>
+
+          <section class="guide-section">
+            <div>
+              <h4>Valor de los dados</h4>
+              <p>El orden de fuerza es: 2, 3, 4, 5, 6 y 1. El as vale más y puede apoyar combinaciones fuertes.</p>
+            </div>
+            <div class="guide-visual guide-order">
+              <i>2</i><span>&lt;</span><i>3</i><span>&lt;</span><i>4</i><span>&lt;</span><i>5</i><span>&lt;</span><i>6</i><span>&lt;</span><i>1</i>
+            </div>
+          </section>
+
+          <section class="guide-section">
+            <div>
+              <h4>Tu turno</h4>
+              <p>Lanza, guarda los dados que te sirven y vuelve a lanzar los demás. Puedes plantarte cuando estés conforme.</p>
+            </div>
+            <div class="guide-visual guide-zones">
+              <div>
+                <span>Guardados</span>
+                <div class="guide-dice-row"><i>5</i><i>5</i></div>
+              </div>
+              <em>➜</em>
+              <div>
+                <span>Para lanzar</span>
+                <div class="guide-dice-row"><i>2</i><i>6</i><i>1</i></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="guide-section">
+            <div>
+              <h4>Dados guardados</h4>
+              <p>Mientras no vuelvas a lanzar, puedes quitar dados guardados en ese mismo turno. Después de lanzar, quedan bloqueados.</p>
+            </div>
+            <div class="guide-visual guide-lock">
+              <i class="locked">4</i><i class="locked">4</i><i>2</i><small>Bloqueados despues del lanzamiento</small>
+            </div>
+          </section>
+
+          <section class="guide-section">
+            <div>
+              <h4>Individual y equipos</h4>
+              <p>En individual todos compiten por la mejor jugada. En equipos, un equipo deja una marca y el otro intenta superarla.</p>
+            </div>
+            <div class="guide-visual guide-teams">
+              <strong>Equipo A</strong>
+              <span>vs</span>
+              <strong>Equipo B</strong>
+            </div>
+          </section>
+
+          <section class="guide-section">
+            <div>
+              <h4>Cachito y campeon</h4>
+              <p>Si sacas 5 ases, ganas la ronda al instante. Al llegar a la meta de victorias aparece la animacion final de campeon.</p>
+            </div>
+            <div class="guide-visual guide-cachito">
+              <div class="guide-dice-row"><i>1</i><i>1</i><i>1</i><i>1</i><i>1</i></div>
+              <strong>¡Cachito!</strong>
+            </div>
+          </section>
+        </div>
+      </article>
+    </section>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=guide-popup-1"></script>
 </body>
 </html>

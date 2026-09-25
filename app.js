@@ -23,6 +23,19 @@ const SPEEDS = {
   normal: 1.9,
   fast: 1.25
 };
+const USER_STORAGE_KEY = "cachito-user";
+const SESSION_STORAGE_KEY = "cachito-last-session";
+const PREF_STORAGE_KEY = "cachito-preferences";
+const GAME_TYPE_LABELS = {
+  callao: "Callao",
+  tortuga: "Tortuga",
+  "ojos-azules": "Ojos azules"
+};
+const LEARN_MODE_LABELS = {
+  recognize: "Reconocer jugada",
+  stand: "Cuando plantarme",
+  beat: "Vencer al enemigo"
+};
 
 const state = {
   user: null,
@@ -53,11 +66,25 @@ const state = {
   matchOver: false,
   revealAllDice: false,
   revealedCards: new Set(),
+  gameType: "callao",
   speed: "normal",
   gameToken: 0,
   inGame: false,
   roundOver: false,
-  busy: false
+  busy: false,
+  learnStats: { wins: 0, losses: 0 },
+  learnAdvice: "",
+  recognize: {
+    options: [],
+    correctKey: "",
+    selectedKey: "",
+    answered: false,
+    feedback: ""
+  },
+  beat: {
+    target: null,
+    feedback: ""
+  }
 };
 
 const panels = {
@@ -69,16 +96,23 @@ const panels = {
 
 const loginForm = document.querySelector("#loginForm");
 const usernameInput = document.querySelector("#usernameInput");
-const displayNameInput = document.querySelector("#displayNameInput");
+const passwordInput = document.querySelector("#passwordInput");
 const userTitle = document.querySelector("#userTitle");
-const userMeta = document.querySelector("#userMeta");
+const userNameEditInput = document.querySelector("#userNameEditInput");
 const logoutBtn = document.querySelector("#logoutBtn");
+const saveUserEditBtn = document.querySelector("#saveUserEditBtn");
+const cancelUserEditBtn = document.querySelector("#cancelUserEditBtn");
+const gameTypePicker = document.querySelector(".game-type-picker");
+const learnModeBtn = document.querySelector("#learnModeBtn");
 const practiceModeBtn = document.querySelector("#practiceModeBtn");
 const multiplayerModeBtn = document.querySelector("#multiplayerModeBtn");
+const learnPanel = document.querySelector("#learnPanel");
 const practicePanel = document.querySelector("#practicePanel");
 const multiplayerPanel = document.querySelector("#multiplayerPanel");
+const learnActions = document.querySelector(".learn-actions");
 const practiceIndividualBtn = document.querySelector("#practiceIndividualBtn");
 const practiceTeamsBtn = document.querySelector("#practiceTeamsBtn");
+const practicePlayersInput = document.querySelector("#practicePlayersInput");
 const guideBtn = document.querySelector("#guideBtn");
 const guideModal = document.querySelector("#guideModal");
 const guideCloseBtn = document.querySelector("#guideCloseBtn");
@@ -114,6 +148,8 @@ const rightPlayersTitle = document.querySelector("#rightPlayersTitle");
 const roundTitle = document.querySelector("#roundTitle");
 const modeLabel = document.querySelector("#modeLabel");
 const statusText = document.querySelector("#statusText");
+const gameStatusBar = document.querySelector(".game-panel .status-bar");
+const currentMarkBox = document.querySelector("#currentMark");
 const currentMark = document.querySelector("#currentMark strong");
 const speedInput = document.querySelector("#speedInput");
 const topbarMenu = document.querySelector(".game-panel .topbar-menu");
@@ -121,6 +157,10 @@ const turnPlayer = document.querySelector("#turnPlayer");
 const turnHint = document.querySelector("#turnHint");
 const heldDiceRow = document.querySelector("#heldDiceRow");
 const rollingDiceRow = document.querySelector("#rollingDiceRow");
+const recognizePanel = document.querySelector("#recognizePanel");
+const recognizeOptions = document.querySelector("#recognizeOptions");
+const recognizeFeedback = document.querySelector("#recognizeFeedback");
+const recognizeNextBtn = document.querySelector("#recognizeNextBtn");
 const nextRoundStageBtn = document.querySelector("#nextRoundStageBtn");
 const cup = document.querySelector("#cup");
 const cupStage = document.querySelector("#cupStage");
@@ -148,10 +188,195 @@ function randomDie() {
   return Math.floor(Math.random() * 6) + 1;
 }
 
-function showPanel(name) {
+function normalizeUsername(value) {
+  const text = String(value || "").trim() || "Jugador";
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 18) || "jugador";
+}
+
+function defaultUser() {
+  return {
+    id: "local-player",
+    username: "jugador",
+    name: "Jugador",
+    password: ""
+  };
+}
+
+function loadStoredUser() {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY);
+    if (!raw) return null;
+    const user = JSON.parse(raw);
+    if (!user || typeof user !== "object") return null;
+    const name = String(user.name || user.username || "Jugador").trim() || "Jugador";
+    return {
+      id: user.id || "local-player",
+      username: normalizeUsername(user.username || name),
+      name,
+      password: user.password || ""
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveUser(user) {
+  try {
+    const { id, username, name } = user;
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({ id, username, name }));
+  } catch {
+    // Si localStorage esta bloqueado, la app funciona con el usuario en memoria.
+  }
+}
+
+function saveSession(session) {
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // La sesion solo mejora el refresco; si falla, la app sigue normal.
+  }
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePrefs(prefs) {
+  try {
+    localStorage.setItem(PREF_STORAGE_KEY, JSON.stringify({ ...(loadPrefs() || {}), ...prefs }));
+  } catch {
+    // Preferencias no criticas.
+  }
+}
+
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem(PREF_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function ensureUser() {
+  if (!state.user) {
+    state.user = loadStoredUser() || defaultUser();
+    saveUser(state.user);
+  }
+  usernameInput.value = state.user.name;
+  passwordInput.value = state.user.password || "";
+  return state.user;
+}
+
+function selectGameType(type, options = {}) {
+  state.gameType = type || "callao";
+  gameTypePicker.querySelectorAll("[data-game-type]").forEach((button) => {
+    const active = button.dataset.gameType === state.gameType;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  if (options.persist !== false) savePrefs({ gameType: state.gameType });
+}
+
+function renderUserSummary(editing = false) {
+  ensureUser();
+  userTitle.textContent = state.user.name;
+  userNameEditInput.value = state.user.name;
+  userTitle.classList.toggle("hidden", editing);
+  userNameEditInput.classList.toggle("hidden", !editing);
+  logoutBtn.classList.toggle("hidden", editing);
+  saveUserEditBtn.classList.toggle("hidden", !editing);
+  cancelUserEditBtn.classList.toggle("hidden", !editing);
+  if (editing) {
+    userNameEditInput.focus();
+    userNameEditInput.select();
+  }
+}
+
+function openUserEditor() {
+  renderUserSummary(true);
+}
+
+function saveUserEditor() {
+  const name = userNameEditInput.value.trim() || "Jugador";
+  state.user = {
+    ...ensureUser(),
+    name,
+    username: normalizeUsername(name)
+  };
+  saveUser(state.user);
+  renderLobby();
+  renderUserSummary(false);
+}
+
+function cancelUserEditor() {
+  renderUserSummary(false);
+}
+
+function setLobbyMode(mode, options = {}) {
+  const isLearn = mode === "learn";
+  learnModeBtn.classList.toggle("active", isLearn);
+  practiceModeBtn.classList.toggle("active", !isLearn);
+  multiplayerModeBtn.classList.remove("active");
+  learnPanel.classList.toggle("hidden", !isLearn);
+  practicePanel.classList.toggle("hidden", isLearn);
+  multiplayerPanel.classList.add("hidden");
+  if (options.persist !== false) savePrefs({ lobbyMode: isLearn ? "learn" : "practice" });
+}
+
+const ROUTES = {
+  login: "login.html",
+  lobby: "lobby.html",
+  game: "play.html"
+};
+
+function appBasePath() {
+  let path = window.location.pathname.replace(/\/index\.html$/, "").replace(/\/$/, "");
+  const lastSegment = path.split("/").pop();
+  if (Object.values(ROUTES).includes(lastSegment) || ["login", "lobby", "play"].includes(lastSegment)) {
+    path = path.slice(0, -(lastSegment.length + 1)) || "";
+  }
+  const cachitoIndex = path.lastIndexOf("/cachito");
+  if (cachitoIndex >= 0) return path.slice(0, cachitoIndex + "/cachito".length);
+  return path;
+}
+
+function routeToPanel() {
+  const queryRoute = new URLSearchParams(window.location.search).get("route");
+  if (queryRoute === "play") return "game";
+  if (queryRoute === "lobby") return "lobby";
+  if (queryRoute === "login") return "login";
+  const cleanPath = window.location.pathname.replace(/\/$/, "");
+  const segment = cleanPath.split("/").pop();
+  if (segment === "play" || segment === "play.html") return "game";
+  if (segment === "lobby" || segment === "lobby.html") return "lobby";
+  return "login";
+}
+
+function updateRoute(name, replace = false) {
+  const route = ROUTES[name];
+  if (!route) return;
+  const nextPath = `${appBasePath()}/${route}`;
+  if (window.location.pathname === nextPath) return;
+  const method = replace ? "replaceState" : "pushState";
+  window.history[method]({ panel: name }, "", nextPath);
+}
+
+function showPanel(name, options = {}) {
   Object.entries(panels).forEach(([key, panel]) => {
     panel.classList.toggle("hidden", key !== name);
   });
+  if (options.route !== false) updateRoute(name, Boolean(options.replace));
 }
 
 function openModal(modal) {
@@ -216,29 +441,38 @@ function defaultNames() {
 
 function login(event) {
   event.preventDefault();
+  const name = usernameInput.value.trim() || "Jugador";
   state.user = {
-    id: `u-${Date.now()}`,
-    username: usernameInput.value.trim() || "jugador",
-    name: displayNameInput.value.trim() || "Jugador"
+    id: state.user?.id || "local-player",
+    username: normalizeUsername(name),
+    name,
+    password: passwordInput.value
   };
+  saveUser(state.user);
   renderLobby();
   showPanel("lobby");
 }
 
 function logout() {
-  state.user = null;
-  state.currentRoom = null;
+  ensureUser();
+  usernameInput.focus();
   showPanel("login");
 }
 
-function makeDefaultRoom(mode = "classic", source = "practice") {
-  const seatCount = mode === "teams" ? 6 : 5;
+function practiceSeatCount(mode) {
+  const raw = Number(practicePlayersInput.value);
+  if (mode === "teams") return Math.max(1, Math.min(4, raw || 3)) * 2;
+  return Math.max(2, Math.min(8, raw || 5));
+}
+
+function makeDefaultRoom(mode = "classic", source = "practice", seatCount = mode === "teams" ? 6 : 5) {
   const room = {
     id: `${source}-${Date.now()}`,
     name: mode === "teams" ? "Practica por equipos" : "Practica individual",
     visibility: source === "practice" ? "practice" : "public",
     password: "",
     mode,
+    gameType: state.gameType,
     diceCount: 5,
     targetWins: 5,
     direction: "right",
@@ -260,9 +494,54 @@ function makeDefaultRoom(mode = "classic", source = "practice") {
   return room;
 }
 
-async function startPractice(mode) {
-  state.currentRoom = makeDefaultRoom(mode, "practice");
+async function startLearn(mode) {
+  setLobbyMode("learn");
+  const label = LEARN_MODE_LABELS[mode] || "Aprender";
+  const gameType = GAME_TYPE_LABELS[state.gameType] || "Callao";
+  const soloLearn = mode === "recognize" || mode === "stand" || mode === "beat";
+  const room = makeDefaultRoom("classic", "learn", soloLearn ? 1 : 2);
+  room.name = `Aprender ${gameType}: ${label}`;
+  room.source = "learn";
+  room.learnMode = mode;
+  room.gameType = state.gameType;
+  room.targetWins = 1;
+  if (!soloLearn) {
+    room.seats[1] = {
+      id: "seat-2",
+      type: "bot",
+      status: "filled",
+      userId: "learn-rival",
+      name: mode === "beat" ? "Rival" : "Guia",
+      username: mode === "beat" ? "rival" : "guia",
+      team: null
+    };
+  }
+  saveSession({ screen: "game", source: "learn", learnMode: mode, gameType: state.gameType });
+  state.learnStats = { wins: 0, losses: 0 };
+  state.learnAdvice = "";
+  state.currentRoom = room;
   await startMatch();
+}
+
+async function startPractice(mode) {
+  setLobbyMode("practice");
+  saveSession({ screen: "game", source: "practice", mode, gameType: state.gameType });
+  state.currentRoom = makeDefaultRoom(mode, "practice", practiceSeatCount(mode));
+  await startMatch();
+}
+
+async function restoreSavedGameSession(session) {
+  if (!session || session.screen !== "game") return false;
+  selectGameType(session.gameType || "callao", { persist: false });
+  if (session.source === "learn" && session.learnMode) {
+    await startLearn(session.learnMode);
+    return true;
+  }
+  if (session.source === "practice") {
+    await startPractice(session.mode || "classic");
+    return true;
+  }
+  return false;
 }
 
 function createRoom(event) {
@@ -276,6 +555,7 @@ function createRoom(event) {
     visibility: roomVisibilityInput.value,
     password: roomVisibilityInput.value === "private" ? roomPasswordInput.value.trim() : "",
     mode,
+    gameType: state.gameType,
     diceCount: Number(roomDiceInput.value) || 5,
     targetWins: Number(roomTargetWinsInput.value) || 5,
     direction: roomDirectionInput.value,
@@ -303,6 +583,7 @@ function createRoom(event) {
 }
 
 function makeSeats(mode, count) {
+  const teamSplit = Math.ceil(count / 2);
   return Array.from({ length: count }, (_, index) => ({
     id: `seat-${index + 1}`,
     type: "bot",
@@ -310,7 +591,7 @@ function makeSeats(mode, count) {
     userId: `bot-seat-${index + 1}`,
     name: botName(index),
     username: `bot${index + 1}`,
-    team: mode === "teams" ? index < 3 ? "A" : "B" : null
+    team: mode === "teams" ? index < teamSplit ? "A" : "B" : null
   }));
 }
 
@@ -319,8 +600,7 @@ function botName(index) {
 }
 
 function renderLobby() {
-  userTitle.textContent = state.user?.name || "-";
-  userMeta.textContent = state.user ? `@${state.user.username}` : "-";
+  renderUserSummary(false);
   roomCountLabel.textContent = `${state.rooms.length} sala${state.rooms.length === 1 ? "" : "s"}`;
   roomsList.innerHTML = "";
 
@@ -472,7 +752,7 @@ async function startMatch() {
   setupMatchFromRoom(room);
   logList.innerHTML = "";
   addLog(`Sala ${room.name} lista.`);
-  modeLabel.textContent = state.config.mode === "teams" ? "Modalidad 3 vs 3" : "Todos contra todos";
+  renderGameHeaderMeta();
   cupStage.classList.remove("cup-collecting", "dice-emerging");
   cup.classList.remove("collecting", "covering", "shaking", "reveal");
   cachitoBurst.classList.remove("show");
@@ -481,6 +761,18 @@ async function startMatch() {
   showPanel("game");
   state.busy = true;
   renderAll();
+  if (state.config.source === "learn" && state.config.learnMode === "recognize") {
+    startRecognizeExercise();
+    return;
+  }
+  if (state.config.source === "learn" && state.config.learnMode === "stand") {
+    startStandExercise();
+    return;
+  }
+  if (state.config.source === "learn" && state.config.learnMode === "beat") {
+    startBeatExercise();
+    return;
+  }
   statusText.textContent = "Sorteando quien empieza.";
   await determineStarter(token);
   if (!isActiveGame(token)) return;
@@ -491,6 +783,9 @@ async function startMatch() {
 function setupMatchFromRoom(room) {
   state.config = {
     mode: room.mode,
+    source: room.source || "practice",
+    gameType: room.gameType || "callao",
+    learnMode: room.learnMode || null,
     diceCount: room.diceCount,
     targetWins: room.targetWins,
     direction: room.direction,
@@ -505,6 +800,23 @@ function setupMatchFromRoom(room) {
     wins: 0
   }));
   resetMatchState();
+}
+
+function renderGameHeaderMeta() {
+  const gameType = GAME_TYPE_LABELS[state.config?.gameType] || "Callao";
+  panels.game.classList.toggle("learn-mode", state.config?.source === "learn");
+  if (state.config?.source === "learn") {
+    modeLabel.textContent = `Aprender ${gameType}`;
+    roundTitle.textContent = modeTitle();
+    return;
+  }
+  modeLabel.textContent = state.config?.mode === "teams" ? "Modalidad 3 vs 3" : "Todos contra todos";
+  roundTitle.textContent = state.round > 0 ? `Ronda ${state.round}` : "";
+}
+
+function modeTitle() {
+  if (state.config?.source === "learn") return LEARN_MODE_LABELS[state.config.learnMode] || "Callao";
+  return state.round > 0 ? `Ronda ${state.round}` : "";
 }
 
 function resetMatchState() {
@@ -550,6 +862,18 @@ async function resetMatch() {
   cup.classList.remove("collecting", "covering", "shaking", "reveal");
   cachitoBurst.classList.remove("show");
   championBurst.classList.remove("show");
+  if (isRecognizeMode()) {
+    startRecognizeExercise();
+    return;
+  }
+  if (isStandLearnMode()) {
+    startStandExercise();
+    return;
+  }
+  if (isBeatLearnMode()) {
+    startBeatExercise();
+    return;
+  }
   state.busy = true;
   renderAll();
   statusText.textContent = "Sorteando quien empieza.";
@@ -565,6 +889,9 @@ function leaveGameToLobby() {
   state.busy = false;
   cupStage.classList.remove("cup-collecting", "dice-emerging");
   cup.classList.remove("collecting", "covering", "shaking", "reveal");
+  const prefs = loadPrefs();
+  if (prefs?.gameType) selectGameType(prefs.gameType, { persist: false });
+  setLobbyMode(prefs?.lobbyMode || "practice", { persist: false });
   renderLobby();
   showPanel("lobby");
 }
@@ -644,6 +971,15 @@ function updateSpeed() {
   document.documentElement.style.setProperty("--starter-pop-duration", `${Math.round(920 * factor)}ms`);
 }
 
+function selectSpeed(speed, options = {}) {
+  const nextSpeed = SPEEDS[speed] ? speed : "normal";
+  speedInput.querySelectorAll("[data-speed]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.speed === nextSpeed);
+  });
+  updateSpeed();
+  if (options.persist !== false) savePrefs({ speed: state.speed });
+}
+
 function isActiveGame(token = state.gameToken) {
   return state.inGame && token === state.gameToken;
 }
@@ -660,7 +996,7 @@ function startRound() {
   state.revealedCards = new Set();
   state.roundOver = false;
   assignStarterRanks();
-  roundTitle.textContent = `Ronda ${state.round}`;
+  roundTitle.textContent = modeTitle();
   if (newRoundBtn) newRoundBtn.disabled = true;
   resetTurn();
   renderAll();
@@ -669,6 +1005,18 @@ function startRound() {
 }
 
 function goToNextRound() {
+  if (isRecognizeMode() && state.recognize.answered) {
+    startRecognizeExercise();
+    return;
+  }
+  if (isStandLearnMode() && state.roundOver) {
+    startStandExercise();
+    return;
+  }
+  if (isBeatLearnMode() && state.roundOver) {
+    startBeatExercise();
+    return;
+  }
   if (!state.roundOver || state.matchOver) return;
   state.inGame = true;
   state.busy = false;
@@ -683,11 +1031,351 @@ function resetTurn() {
   state.botChoosingHeld = Array.from({ length: state.config.diceCount }, () => false);
 }
 
+function isRecognizeMode() {
+  return state.config?.source === "learn" && state.config.learnMode === "recognize";
+}
+
+function isStandLearnMode() {
+  return state.config?.source === "learn" && state.config.learnMode === "stand";
+}
+
+function isBeatLearnMode() {
+  return state.config?.source === "learn" && state.config.learnMode === "beat";
+}
+
+function isCompactGameLayout() {
+  return window.matchMedia("(max-width: 1049px)").matches;
+}
+
+function placeRecognizePanel() {
+  if (!isRecognizeMode()) {
+    if (recognizePanel.parentElement !== cupStage) cupStage.appendChild(recognizePanel);
+    return;
+  }
+  const target = isCompactGameLayout() ? cupStage : rightPlayers;
+  if (recognizePanel.parentElement !== target) target.appendChild(recognizePanel);
+}
+
+function startRecognizeExercise() {
+  state.busy = false;
+  state.roundOver = false;
+  state.matchOver = false;
+  state.round = 1;
+  state.turnIndex = 0;
+  state.starterIndex = 0;
+  state.starterRolls = {};
+  state.starterRanks = {};
+  state.starterRollingIds = new Set();
+  state.starterCelebratingId = null;
+  resetTurn();
+  state.recognize = {
+    options: [],
+    correctKey: "",
+    selectedKey: "",
+    answered: false,
+    feedback: ""
+  };
+  renderAll();
+}
+
+function startStandExercise() {
+  state.busy = false;
+  state.roundOver = false;
+  state.matchOver = false;
+  state.inGame = true;
+  state.round = 1;
+  state.turnIndex = 0;
+  state.starterIndex = 0;
+  state.rollLimit = 3;
+  state.results = [];
+  state.activeMark = null;
+  state.learnAdvice = "";
+  state.starterRolls = {};
+  state.starterRanks = {};
+  state.starterRollingIds = new Set();
+  state.starterCelebratingId = null;
+  cachitoBurst.classList.remove("show");
+  championBurst.classList.remove("show");
+  leaderMark.classList.add("hidden");
+  leaderMark.innerHTML = "";
+  resetTurn();
+  renderAll();
+}
+
+function beatTargetKey(target) {
+  return target ? `${resultKey(target.result)}-${target.rolls}` : "";
+}
+
+function randomBeatTarget(previousTarget = null) {
+  const previousKey = beatTargetKey(previousTarget);
+  for (let attempt = 0; attempt < 2500; attempt += 1) {
+    const dice = Array.from({ length: state.config.diceCount }, () => randomDie());
+    const result = evaluateDice(dice, state.config.names);
+    const rolls = 1 + Math.floor(Math.random() * 3);
+    const validTarget = result.gameType === "tortuga"
+      ? result.hasHead && result.legs >= 1 && result.legs <= 3
+      : result.gameType === "ojos-azules"
+        ? result.score >= 4 && result.score <= 12
+        : !result.isCachito && result.count * 10 + result.rank >= 36;
+    if (validTarget) {
+      const target = {
+        playerId: "learn-rival",
+        player: { id: "learn-rival", name: "Rival", type: "bot", team: null },
+        result,
+        rolls,
+        dice,
+        provisional: false
+      };
+      if (beatTargetKey(target) !== previousKey) return target;
+    }
+  }
+  const dice = currentGameType() === "tortuga"
+    ? [6, 1, 1, 3, 4].slice(0, state.config.diceCount)
+    : currentGameType() === "ojos-azules"
+      ? [2, 5, 3, 4, 1].slice(0, state.config.diceCount)
+      : [1, 2, 2, 2, 2].slice(0, state.config.diceCount);
+  const result = evaluateDice(dice, state.config.names);
+  return {
+    playerId: "learn-rival",
+    player: { id: "learn-rival", name: "Rival", type: "bot", team: null },
+    result,
+    rolls: 2,
+    dice,
+    provisional: false
+  };
+}
+
+function startBeatExercise() {
+  const previousTarget = state.beat.target;
+  state.busy = false;
+  state.roundOver = false;
+  state.matchOver = false;
+  state.inGame = true;
+  state.round = 1;
+  state.turnIndex = 0;
+  state.starterIndex = 0;
+  state.results = [];
+  state.activeMark = null;
+  state.learnAdvice = "";
+  state.beat = {
+    target: randomBeatTarget(previousTarget),
+    feedback: ""
+  };
+  state.starterRolls = {};
+  state.starterRanks = {};
+  state.starterRollingIds = new Set();
+  state.starterCelebratingId = null;
+  cachitoBurst.classList.remove("show");
+  championBurst.classList.remove("show");
+  resetTurn();
+  renderAll();
+}
+
+function resultKey(result) {
+  if (result.gameType === "tortuga") return `tortuga-${result.hasHead ? 1 : 0}-${result.legs || 0}`;
+  if (result.gameType === "ojos-azules") return `ojos-${result.score}`;
+  return `${result.count}-${result.value}`;
+}
+
+function optionFromResult(result) {
+  return {
+    key: resultKey(result),
+    label: result.label
+  };
+}
+
+function randomResultOption() {
+  if (currentGameType() === "tortuga") {
+    const hasHead = Math.random() > 0.18;
+    const legs = hasHead ? Math.floor(Math.random() * 5) : 0;
+    const result = {
+      gameType: "tortuga",
+      hasHead,
+      legs,
+      label: hasHead
+        ? legs === 0
+          ? "Cabeza"
+          : legs >= 4
+            ? "Tortuga completa"
+            : `Cabeza + ${legs} pata${legs === 1 ? "" : "s"}`
+        : "Sin tortuga"
+    };
+    return { key: resultKey(result), label: result.label };
+  }
+  if (currentGameType() === "ojos-azules") {
+    const score = Math.floor(Math.random() * 22);
+    return { key: `ojos-${score}`, label: `${score} punto${score === 1 ? "" : "s"}` };
+  }
+  const count = 1 + Math.floor(Math.random() * 5);
+  const value = VALUE_ORDER[Math.floor(Math.random() * VALUE_ORDER.length)];
+  return {
+    key: `${count}-${value}`,
+    label: `${count} ${state.config.names[value]}`
+  };
+}
+
+function shuffleItems(items) {
+  return [...items].sort(() => Math.random() - 0.5);
+}
+
+function prepareRecognizeOptions() {
+  const correct = optionFromResult(evaluateDice(state.dice, state.config.names));
+  const options = [correct];
+  while (options.length < 5) {
+    const option = randomResultOption();
+    if (options.some((item) => item.key === option.key)) continue;
+    options.push(option);
+  }
+  state.recognize = {
+    options: shuffleItems(options),
+    correctKey: correct.key,
+    selectedKey: "",
+    answered: false,
+    feedback: ""
+  };
+  renderAll();
+}
+
+function chooseRecognizeOption(key) {
+  if (!isRecognizeMode() || state.recognize.answered || !state.recognize.correctKey) return;
+  const isCorrect = key === state.recognize.correctKey;
+  state.recognize.selectedKey = key;
+  state.recognize.answered = true;
+  state.recognize.feedback = isCorrect
+    ? "¡Correcto! Esa era la jugada."
+    : "No acertaste. Te marco la jugada correcta.";
+  if (isCorrect) state.learnStats.wins += 1;
+  else state.learnStats.losses += 1;
+  renderAll();
+}
+
+function simulateBestResultFrom(dice, held, rollsLeft, samples = 900) {
+  let better = 0;
+  const current = evaluateDice(dice, state.config.names);
+  for (let sample = 0; sample < samples; sample += 1) {
+    let candidateDice = [...dice];
+    let candidateHeld = [...held];
+    for (let roll = 0; roll < rollsLeft; roll += 1) {
+      candidateDice = candidateDice.map((value, index) => candidateHeld[index] && value ? value : randomDie());
+      const result = evaluateDice(candidateDice, state.config.names);
+      const scoring = scoringDiceIndexes({ result, dice: candidateDice });
+      candidateHeld = candidateDice.map((_, index) => candidateHeld[index] || scoring.has(index));
+    }
+    if (compareResults(evaluateDice(candidateDice, state.config.names), current) > 0) better += 1;
+  }
+  return better / samples;
+}
+
+function simulateBeatChances(targetResult, rolls, samples = 700, opponents = 5) {
+  let beatenOpponents = 0;
+  let beatenTables = 0;
+  for (let sample = 0; sample < samples; sample += 1) {
+    let tableBeat = false;
+    for (let opponent = 0; opponent < opponents; opponent += 1) {
+      let candidateDice = Array.from({ length: state.config.diceCount }, () => 0);
+      let candidateHeld = Array.from({ length: state.config.diceCount }, () => false);
+      for (let roll = 0; roll < rolls; roll += 1) {
+        candidateDice = candidateDice.map((value, index) => candidateHeld[index] && value ? value : randomDie());
+        const result = evaluateDice(candidateDice, state.config.names);
+        const scoring = scoringDiceIndexes({ result, dice: candidateDice });
+        candidateHeld = candidateDice.map((_, index) => candidateHeld[index] || scoring.has(index));
+      }
+      const beatsTarget = compareResults(evaluateDice(candidateDice, state.config.names), targetResult) > 0;
+      if (beatsTarget) {
+        beatenOpponents += 1;
+        tableBeat = true;
+      }
+    }
+    if (tableBeat) beatenTables += 1;
+  }
+  return {
+    opponent: beatenOpponents / (samples * opponents),
+    table: beatenTables / samples
+  };
+}
+
+function standAdvice(result, rolls) {
+  const rollsLeft = Math.max(0, 3 - rolls);
+  const improveChance = rollsLeft > 0
+    ? simulateBestResultFrom([...state.dice], [...state.held], rollsLeft)
+    : 0;
+  const opponents = state.config?.source === "learn" ? 5 : Math.max(1, state.players.length - 1);
+  const beatChances = simulateBeatChances(result, rolls, 700, opponents);
+  const opponentBeatPercent = Math.round(beatChances.opponent * 100);
+  const tableBeatPercent = Math.round(beatChances.table * 100);
+  const improvePercent = Math.round(improveChance * 100);
+  if (result.gameType === "tortuga") {
+    let verdict = "";
+    if (rolls >= 3) {
+      verdict = result.hasHead && result.legs >= 3
+        ? "Buena tortuga final."
+        : result.hasHead
+          ? "Tortuga regular; al menos tienes cabeza."
+          : "Mala suerte: sin cabeza no hay tortuga.";
+      return `${result.label} en 3 tiros. ${verdict} Te gane un rival: ${opponentBeatPercent}%. Mesa completa: ${tableBeatPercent}%.`;
+    }
+    if (result.hasHead && result.legs >= 3) verdict = "Buena opcion: tienes cabeza y varias patas.";
+    else if (result.hasHead && improveChance < 0.45) verdict = "Plantarte puede estar bien: ya tienes cabeza y no era tan probable mejorar.";
+    else verdict = "Conviene seguir: necesitas cabeza y mas patas para competir.";
+    return `${result.label} en ${rolls} tiro${rolls === 1 ? "" : "s"}. ${verdict} Rival: ${opponentBeatPercent}%. Mesa: ${tableBeatPercent}%. Mejorar: ${improvePercent}%.`;
+  }
+  if (result.gameType === "ojos-azules") {
+    let verdict = "";
+    if (rolls >= 3) {
+      verdict = result.score <= 4
+        ? "Muy buen puntaje final."
+        : result.score <= 9
+          ? "Puntaje aceptable."
+          : "Puntaje alto; es probable que te ganen.";
+      return `${result.label} en 3 tiros. ${verdict} Te gane un rival: ${opponentBeatPercent}%. Mesa completa: ${tableBeatPercent}%.`;
+    }
+    if (result.score <= 4) verdict = "Buena opcion: puntaje bajo para plantarte.";
+    else if (improveChance >= 0.55) verdict = "Conviene seguir: es bastante probable bajar el puntaje.";
+    else if (result.score <= 8) verdict = "Plantarte es razonable, aunque podrias intentar bajarlo.";
+    else verdict = "Puntaje alto: conviene arriesgar otro tiro.";
+    return `${result.label} en ${rolls} tiro${rolls === 1 ? "" : "s"}. ${verdict} Rival: ${opponentBeatPercent}%. Mesa: ${tableBeatPercent}%. Mejorar: ${improvePercent}%.`;
+  }
+  const strength = result.count * 10 + result.rank;
+  let verdict = "";
+  if (rolls >= 3) {
+    if (result.isCachito || result.count >= 5 || strength >= 46) {
+      verdict = "Llegaste al tercer tiro: era obligatorio plantarte. Buena jugada final.";
+    } else if (result.count >= 4 || strength >= 36) {
+      verdict = "Llegaste al tercer tiro: era obligatorio plantarte. Jugada aceptable.";
+    } else {
+      verdict = "Llegaste al tercer tiro: era obligatorio plantarte. Mala jugada final; no se podia hacer mas, mala suerte.";
+    }
+  } else if (rolls === 1 && result.count >= 4 && result.rank >= VALUE_RANK.get(5)) {
+    verdict = "Buena opcion: conviene plantarte. Es una jugada fuerte y al hacerla en 1 tiro obligas a los demas a superarla con un solo lanzamiento.";
+  } else if (rolls === 1 && result.count >= 4) {
+    verdict = "Plantarte esta bien: una jugada de 4 dados en 1 tiro presiona bastante porque limita a todos a un solo lanzamiento.";
+  } else if (rolls === 2 && result.count >= 4 && result.rank >= VALUE_RANK.get(4)) {
+    verdict = "Buena opcion: es una jugada fuerte para plantarte en 2 tiros.";
+  } else if (strength >= 46 || result.isCachito) {
+    verdict = "Buena opcion: es una jugada fuerte para plantarte.";
+  } else if (beatChances.opponent <= 0.28 && improveChance < 0.45) {
+    verdict = "Plantarte esta bien: el riesgo de que te ganen es bajo y no habia tanta mejora probable.";
+  } else if (improveChance >= 0.55 && beatChances.opponent >= 0.4) {
+    verdict = "Debiste seguir: habia buena chance de mejorar y todavia te podian superar.";
+  } else if (improveChance >= 0.55) {
+    verdict = "Seguir era una buena opcion: todavia era bastante probable mejorar.";
+  } else if (strength < 34) {
+    verdict = "Jugada floja: conviene arriesgar un tiro mas.";
+  } else {
+    verdict = "Plantarte esta bien, aunque habia margen para intentar mejorar.";
+  }
+  if (rolls >= 3) return `${result.label} en 3 tiros. ${verdict} Te gane un rival: ${opponentBeatPercent}%. Mesa completa: ${tableBeatPercent}%.`;
+  return `${result.label} en ${rolls} tiro${rolls === 1 ? "" : "s"}. ${verdict} Rival: ${opponentBeatPercent}%. Mesa: ${tableBeatPercent}%. Mejorar: ${improvePercent}%.`;
+}
+
 function currentPlayer() {
   return state.players[state.turnIndex];
 }
 
 function maxRollsForTurn() {
+  if (isRecognizeMode()) return 1;
+  if (isStandLearnMode()) return 3;
+  if (isBeatLearnMode()) return state.beat.target?.rolls || 3;
   if (state.config.mode === "teams" && !state.activeMark) return 3;
   return state.rollLimit || 3;
 }
@@ -730,6 +1418,12 @@ function rollDice() {
       cupStage.classList.remove("dice-emerging");
       state.busy = false;
       renderAll();
+      if (isRecognizeMode()) {
+        prepareRecognizeOptions();
+        return;
+      }
+      if (isStandLearnMode()) return;
+      if (isBeatLearnMode()) return;
       const result = evaluateDice(state.dice, state.config.names);
       if (result.isCachito) {
         const player = currentPlayer();
@@ -747,6 +1441,33 @@ function stand() {
   const result = evaluateDice(state.dice, state.config.names);
   state.results.push({ playerId: player.id, result, rolls: state.currentRolls, dice: [...state.dice] });
   addLog(`${player.name} se planta con ${result.label} (${state.currentRolls} tiro${state.currentRolls === 1 ? "" : "s"}).`);
+
+  if (isStandLearnMode()) {
+    state.learnAdvice = standAdvice(result, state.currentRolls);
+    state.roundOver = true;
+    state.matchOver = false;
+    state.busy = false;
+    cachitoBurst.classList.remove("show");
+    championBurst.classList.remove("show");
+    renderAll();
+    return;
+  }
+
+  if (isBeatLearnMode()) {
+    const target = state.beat.target;
+    const won = target && compareResults(result, target.result) > 0;
+    state.learnStats[won ? "wins" : "losses"] += 1;
+    state.beat.feedback = won
+      ? `Has ganado: ${result.label} supera ${target.result.label}.`
+      : `Has perdido: ${result.label} no supera ${target.result.label}.`;
+    state.roundOver = true;
+    state.matchOver = false;
+    state.busy = false;
+    cachitoBurst.classList.remove("show");
+    championBurst.classList.remove("show");
+    renderAll();
+    return;
+  }
 
   if (state.config.mode === "classic") {
     handleClassicStand();
@@ -944,7 +1665,18 @@ function showChampionBurst(winner) {
   championBurst.classList.add("show");
 }
 
+function currentGameType() {
+  return state.config?.gameType || state.gameType || "callao";
+}
+
 function evaluateDice(dice, names) {
+  const gameType = currentGameType();
+  if (gameType === "tortuga") return evaluateTortugaDice(dice);
+  if (gameType === "ojos-azules") return evaluateOjosAzulesDice(dice);
+  return evaluateCallaoDice(dice, names);
+}
+
+function evaluateCallaoDice(dice, names) {
   const counts = new Map(VALUE_ORDER.map((value) => [value, 0]));
   dice.forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
 
@@ -954,6 +1686,7 @@ function evaluateDice(dice, names) {
     if (!topCount) continue;
 
     const candidates = [{
+      gameType: "callao",
       count: topCount,
       value: topValue,
       rank: VALUE_RANK.get(topValue),
@@ -968,6 +1701,7 @@ function evaluateDice(dice, names) {
       if (amount > 0) {
         const total = topCount + amount;
         candidates.push({
+          gameType: "callao",
           count: total,
           value: topValue,
           rank: VALUE_RANK.get(topValue),
@@ -984,6 +1718,7 @@ function evaluateDice(dice, names) {
   }
 
   return best || {
+    gameType: "callao",
     count: 0,
     value: 2,
     rank: 0,
@@ -993,7 +1728,58 @@ function evaluateDice(dice, names) {
   };
 }
 
+function evaluateTortugaDice(dice) {
+  const hasHead = dice.includes(6);
+  const legs = hasHead ? dice.filter((value) => value === 1).length : 0;
+  const count = hasHead ? 1 + legs : 0;
+  const label = hasHead
+    ? legs === 0
+      ? "Cabeza"
+      : legs >= 4
+        ? "Tortuga completa"
+        : `Cabeza + ${legs} pata${legs === 1 ? "" : "s"}`
+    : "Sin tortuga";
+  return {
+    gameType: "tortuga",
+    count,
+    value: 6,
+    rank: hasHead ? legs + 1 : 0,
+    parts: hasHead ? [6, 1] : [],
+    isCachito: false,
+    hasHead,
+    legs,
+    label
+  };
+}
+
+function evaluateOjosAzulesDice(dice) {
+  const scoringValues = dice.filter((value) => value && value !== 2 && value !== 5);
+  const score = scoringValues.reduce((sum, value) => sum + value, 0);
+  const saved = dice.filter((value) => value === 2 || value === 5).length;
+  return {
+    gameType: "ojos-azules",
+    count: saved,
+    value: 0,
+    rank: 30 - score,
+    parts: [2, 5],
+    isCachito: false,
+    score,
+    saved,
+    label: `${score} punto${score === 1 ? "" : "s"}`
+  };
+}
+
 function compareResults(a, b) {
+  const gameType = a?.gameType || b?.gameType || currentGameType();
+  if (gameType === "tortuga") {
+    if (Boolean(a.hasHead) !== Boolean(b.hasHead)) return a.hasHead ? 1 : -1;
+    if ((a.legs || 0) !== (b.legs || 0)) return (a.legs || 0) - (b.legs || 0);
+    return 0;
+  }
+  if (gameType === "ojos-azules") {
+    if ((a.score ?? 99) !== (b.score ?? 99)) return (b.score ?? 99) - (a.score ?? 99);
+    return (a.saved || 0) - (b.saved || 0);
+  }
   if (a.isCachito && !b.isCachito) return 1;
   if (!a.isCachito && b.isCachito) return -1;
   if (a.count !== b.count) return a.count - b.count;
@@ -1043,11 +1829,35 @@ function botThink() {
 
 function botShouldStand(result, limit) {
   if (state.currentRolls >= limit) return true;
+  if (currentGameType() === "tortuga") return botShouldStandTortuga(result);
+  if (currentGameType() === "ojos-azules") return botShouldStandOjosAzules(result);
   const isOpeningMark = state.config.mode === "classic" ? state.rollLimit === null : state.activeMark === null;
   if (isOpeningMark) return isStrongOpeningResult(result);
   if (state.config.mode === "teams" && state.activeMark) return compareResults(result, state.activeMark.result) > 0 && result.count >= 4;
   const currentBest = bestClassicResult();
   return currentBest && compareResults(result, currentBest.result) > 0 && result.count >= 4;
+}
+
+function botShouldStandTortuga(result) {
+  if (result.hasHead && result.legs >= 4) return true;
+  if (state.config.mode === "teams" && state.activeMark) return compareResults(result, state.activeMark.result) > 0 && result.legs >= 2;
+  const isOpeningMark = state.config.mode === "classic" ? state.rollLimit === null : state.activeMark === null;
+  if (isOpeningMark) return result.hasHead && (state.currentRolls >= 2 ? result.legs >= 2 : result.legs >= 3);
+  const currentBest = bestClassicResult();
+  return currentBest && compareResults(result, currentBest.result) > 0 && result.hasHead;
+}
+
+function botShouldStandOjosAzules(result) {
+  if (result.score <= 0) return true;
+  if (state.config.mode === "teams" && state.activeMark) return compareResults(result, state.activeMark.result) > 0 && result.score <= 6;
+  const isOpeningMark = state.config.mode === "classic" ? state.rollLimit === null : state.activeMark === null;
+  if (isOpeningMark) {
+    if (state.currentRolls === 1) return result.score <= 4;
+    if (state.currentRolls === 2) return result.score <= 7;
+    return true;
+  }
+  const currentBest = bestClassicResult();
+  return currentBest && compareResults(result, currentBest.result) > 0 && result.score <= 8;
 }
 
 function isStrongOpeningResult(result) {
@@ -1073,30 +1883,85 @@ function maybeRunAutomaticPlayer() {
 }
 
 function toggleHold(index) {
+  if (isRecognizeMode()) return;
   if (state.busy || state.roundOver || state.currentRolls === 0 || currentPlayer().type !== "human") return;
   if (state.lockedHeld[index]) return;
+  if (!canHoldDie(index)) return;
   state.held[index] = !state.held[index];
   renderAll();
 }
 
+function canHoldDie(index) {
+  const value = state.dice[index];
+  if (!value) return false;
+  if (currentGameType() === "tortuga") {
+    if (value === 6) {
+      if (state.held[index] && state.held.some((held, heldIndex) => held && state.dice[heldIndex] === 1)) return false;
+      return !state.held.some((held, heldIndex) => held && state.dice[heldIndex] === 6 && heldIndex !== index);
+    }
+    if (value === 1) return state.held.some((held, heldIndex) => held && state.dice[heldIndex] === 6 && heldIndex !== index);
+    return false;
+  }
+  if (currentGameType() === "ojos-azules") return value === 2 || value === 5;
+  return true;
+}
+
 function renderAll() {
+  panels.game.classList.toggle("recognize-mode", isRecognizeMode());
   renderPlayers();
   renderDice(false);
+  renderRecognizePanel();
   renderStatus();
   renderLeaderMark();
   const humanTurn = currentPlayer()?.type === "human";
-  const canStartNextRound = state.roundOver && !state.matchOver;
+  const canStartNextRound = isRecognizeMode()
+    ? state.recognize.answered
+    : (isStandLearnMode() || isBeatLearnMode())
+      ? state.roundOver
+      : state.roundOver && !state.matchOver;
   nextRoundStageBtn.classList.toggle("hidden", !canStartNextRound);
   nextRoundStageBtn.disabled = !canStartNextRound;
-  rollBtn.disabled = state.busy || state.roundOver || !humanTurn || state.currentRolls >= maxRollsForTurn();
-  standBtn.disabled = state.busy || state.roundOver || !humanTurn || state.currentRolls === 0;
+  nextRoundStageBtn.textContent = isRecognizeMode() || isStandLearnMode() || isBeatLearnMode() ? "Siguiente" : "Siguiente ronda";
+  rollBtn.disabled = state.busy || state.roundOver || !humanTurn || state.currentRolls >= maxRollsForTurn() || (isRecognizeMode() && state.recognize.answered);
+  standBtn.classList.toggle("hidden", isRecognizeMode());
+  standBtn.disabled = isRecognizeMode() || state.busy || state.roundOver || !humanTurn || state.currentRolls === 0;
+}
+
+function renderRecognizePanel() {
+  const active = isRecognizeMode();
+  placeRecognizePanel();
+  recognizePanel.classList.toggle("hidden", !active);
+  if (!active) return;
+  recognizeOptions.innerHTML = "";
+  state.recognize.options.forEach((option) => {
+    const button = document.createElement("button");
+    const isSelected = option.key === state.recognize.selectedKey;
+    const isCorrect = option.key === state.recognize.correctKey;
+    button.type = "button";
+    button.className = `recognize-option${state.recognize.answered && isCorrect ? " correct" : ""}${state.recognize.answered && isSelected && !isCorrect ? " wrong" : ""}${state.recognize.answered && isSelected && isCorrect ? " celebrate" : ""}`;
+    button.textContent = option.label;
+    button.disabled = state.recognize.answered;
+    button.addEventListener("click", () => chooseRecognizeOption(option.key));
+    recognizeOptions.appendChild(button);
+  });
+  recognizeFeedback.textContent = state.recognize.feedback || (state.currentRolls ? "Escoge la jugada correcta." : "Lanza los dados para ver una jugada.");
+  recognizeFeedback.className = state.recognize.answered
+    ? state.recognize.selectedKey === state.recognize.correctKey ? "good" : "bad"
+    : "";
+  recognizeNextBtn.classList.add("hidden");
 }
 
 function renderPlayers() {
   leftPlayers.innerHTML = "";
   rightPlayers.innerHTML = "";
+  leftPlayers.parentElement.classList.toggle("hidden", false);
+  rightPlayers.parentElement.classList.toggle("hidden", isRecognizeMode() && isCompactGameLayout());
+  placeRecognizePanel();
 
-  if (state.config.mode === "teams") {
+  if (isRecognizeMode() || isBeatLearnMode()) {
+    leftPlayersTitle.textContent = "Aciertos / Errores";
+    rightPlayersTitle.textContent = isRecognizeMode() ? "Opciones" : "Reto";
+  } else if (state.config.mode === "teams") {
     leftPlayersTitle.textContent = `Equipo A (${state.teamWins.A}/${state.config.targetWins})`;
     rightPlayersTitle.textContent = `Equipo B (${state.teamWins.B}/${state.config.targetWins})`;
   } else {
@@ -1185,6 +2050,21 @@ function renderOrderedMiniDice(entry, held = []) {
 
 function scoringDiceIndexes(entry) {
   const indexes = new Set();
+  if (entry.result.gameType === "tortuga") {
+    if (!entry.result.hasHead) return indexes;
+    const headIndex = entry.dice.findIndex((value) => value === 6);
+    if (headIndex >= 0) indexes.add(headIndex);
+    entry.dice.forEach((value, index) => {
+      if (value === 1) indexes.add(index);
+    });
+    return indexes;
+  }
+  if (entry.result.gameType === "ojos-azules") {
+    entry.dice.forEach((value, index) => {
+      if (value === 2 || value === 5) indexes.add(index);
+    });
+    return indexes;
+  }
   let remaining = entry.result.count;
   const valuesToUse = [entry.result.value, ...entry.result.parts.filter((value) => value !== entry.result.value)];
   valuesToUse.forEach((partValue) => {
@@ -1220,6 +2100,43 @@ function visibleLeaderEntry() {
 }
 
 function renderLeaderMark() {
+  if (isRecognizeMode()) {
+    leaderMark.classList.add("hidden");
+    leaderMark.innerHTML = "";
+    return;
+  }
+  if (isBeatLearnMode()) {
+    const target = state.beat.target;
+    const won = state.roundOver && state.beat.feedback?.startsWith("Has ganado");
+    const lost = state.roundOver && state.beat.feedback?.startsWith("Has perdido");
+    leaderMark.classList.toggle("hidden", !target);
+    leaderMark.classList.toggle("is-winner", Boolean(won));
+    leaderMark.classList.toggle("is-champion", false);
+    leaderMark.classList.toggle("is-beat-result", Boolean(state.roundOver));
+    leaderMark.classList.toggle("is-loser", Boolean(lost));
+    leaderMark.classList.remove("is-advice");
+    if (!target) {
+      leaderMark.innerHTML = "";
+      return;
+    }
+    leaderMark.innerHTML = `
+      ${state.roundOver ? `<em class="beat-outcome">${won ? "GANASTE" : "PERDISTE"}</em>` : ""}
+      <div class="leader-mark-label">
+        <span>${state.roundOver ? "Resultado" : "A superar"}</span>
+      </div>
+      <strong>${escapeHtml(target.player.name)}</strong>
+      <b>${target.result.label}</b>
+      <small>${target.rolls} tiro${target.rolls === 1 ? "" : "s"}</small>
+      <div class="leader-mini-dice">${renderMiniDice(target)}</div>
+    `;
+    return;
+  }
+  if (isStandLearnMode()) {
+    leaderMark.classList.add("hidden");
+    leaderMark.classList.remove("is-winner", "is-champion", "is-advice");
+    leaderMark.innerHTML = "";
+    return;
+  }
   const leader = visibleLeaderEntry();
   leaderMark.classList.toggle("hidden", !leader);
   leaderMark.classList.toggle("is-winner", Boolean(leader && state.roundOver));
@@ -1243,6 +2160,7 @@ function renderLeaderMark() {
 }
 
 function playerWinsLabel(player) {
+  if (isRecognizeMode() || isBeatLearnMode()) return `${state.learnStats.wins}/${state.learnStats.losses}`;
   if (state.config.mode === "teams") return `${state.teamWins[player.team]}/${state.config.targetWins}`;
   return `${player.wins}/${state.config.targetWins}`;
 }
@@ -1295,10 +2213,35 @@ function renderPips(die, value) {
 
 function renderStatus() {
   const player = currentPlayer();
-  turnPlayer.textContent = player ? `${player.name}${player.team ? ` / Equipo ${player.team}` : ""}` : "-";
+  turnPlayer.textContent = isRecognizeMode()
+    ? "Reconocer jugada"
+    : isStandLearnMode()
+      ? "Cuando plantarme"
+      : isBeatLearnMode()
+        ? "Vencer al enemigo"
+        : player ? `${player.name}${player.team ? ` / Equipo ${player.team}` : ""}` : "-";
   const limit = maxRollsForTurn();
   const result = state.currentRolls > 0 ? evaluateDice(state.dice, state.config.names) : null;
-  if (state.roundOver) {
+  if (isRecognizeMode()) {
+    turnHint.textContent = state.currentRolls === 0
+      ? "Lanza los dados y elige la jugada correcta."
+      : state.recognize.answered
+        ? "Pulsa Siguiente para repetir el ejercicio."
+        : "Mira los dados y escoge una de las opciones.";
+  } else if (isStandLearnMode()) {
+    turnHint.textContent = state.roundOver
+      ? "Pulsa Siguiente para intentar otra decision."
+      : state.currentRolls === 0
+        ? "Lanza, guarda dados si quieres y plantate cuando lo veas conveniente."
+        : `Va ${state.currentRolls}/3. Jugada actual: ${result.label}.`;
+  } else if (isBeatLearnMode()) {
+    const target = state.beat.target;
+    turnHint.textContent = state.roundOver
+      ? "Pulsa Siguiente para intentar otro reto."
+      : state.currentRolls === 0
+        ? `Lanza e intenta superar ${target?.result.label || "la jugada rival"} en hasta ${limit} tiro${limit === 1 ? "" : "s"}.`
+        : `Va ${state.currentRolls}/${limit}. Tu jugada actual: ${result.label}.`;
+  } else if (state.roundOver) {
     turnHint.textContent = state.matchOver ? "Partida terminada." : "Ronda terminada.";
   } else if (player?.type === "remote") {
     turnHint.textContent = "Esperando accion de jugador remoto. En Firebase llegara desde su navegador.";
@@ -1308,12 +2251,34 @@ function renderStatus() {
     turnHint.textContent = `Va ${state.currentRolls}/${limit}. Jugada actual: ${result.label}.`;
   }
 
-  statusText.textContent = state.config.mode === "teams" ? teamStatus() : classicStatus();
-  currentMark.textContent = state.activeMark
-    ? `${state.activeMark.result.label} / Equipo ${state.activeMark.team}`
-    : state.rollLimit
-      ? `Limite: ${state.rollLimit} tiro${state.rollLimit === 1 ? "" : "s"}`
-      : "Sin jugada";
+  rollBtn.textContent = isRecognizeMode() ? "Lanzar dados" : "Lanzar";
+
+  statusText.textContent = state.config.source === "learn"
+    ? isStandLearnMode() && state.learnAdvice
+      ? state.learnAdvice
+      : isBeatLearnMode() && state.beat.feedback
+        ? state.beat.feedback
+        : learnStatus()
+    : state.config.mode === "teams" ? teamStatus() : classicStatus();
+
+  const hideCurrentMarkOnMobile = state.config.mode !== "teams";
+  gameStatusBar.classList.toggle("hide-current-mark-mobile", hideCurrentMarkOnMobile);
+  currentMarkBox.classList.remove("hidden");
+  currentMark.textContent = state.config.source === "learn"
+    ? "Entrenamiento"
+    : state.activeMark
+      ? `${state.activeMark.result.label} / Equipo ${state.activeMark.team}`
+      : state.rollLimit
+        ? `Limite: ${state.rollLimit} tiro${state.rollLimit === 1 ? "" : "s"}`
+        : "Sin jugada";
+}
+
+function learnStatus() {
+  const gameType = GAME_TYPE_LABELS[currentGameType()] || "Callao";
+  if (state.config.learnMode === "recognize") return `Tira los dados y practica reconocer la jugada de ${gameType}.`;
+  if (state.config.learnMode === "stand") return `Decide que guardar y cuando plantarte en ${gameType}.`;
+  if (state.config.learnMode === "beat") return `Intenta vencer una jugada rival de ${gameType} usando la misma cantidad de tiros.`;
+  return `Modo aprendizaje de ${gameType}.`;
 }
 
 function classicStatus() {
@@ -1337,17 +2302,35 @@ function addLog(message) {
 }
 
 loginForm.addEventListener("submit", login);
-logoutBtn.addEventListener("click", logout);
+logoutBtn.addEventListener("click", openUserEditor);
+saveUserEditBtn.addEventListener("click", saveUserEditor);
+cancelUserEditBtn.addEventListener("click", cancelUserEditor);
+userNameEditInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") saveUserEditor();
+  if (event.key === "Escape") cancelUserEditor();
+});
+gameTypePicker.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-game-type]");
+  if (!button) return;
+  selectGameType(button.dataset.gameType);
+});
+learnActions.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-learn-mode]");
+  if (!button) return;
+  startLearn(button.dataset.learnMode);
+});
+learnModeBtn.addEventListener("click", () => {
+  setLobbyMode("learn");
+});
 practiceModeBtn.addEventListener("click", () => {
-  practiceModeBtn.classList.add("active");
-  multiplayerModeBtn.classList.remove("active");
-  practicePanel.classList.remove("hidden");
-  multiplayerPanel.classList.add("hidden");
+  setLobbyMode("practice");
 });
 multiplayerModeBtn.addEventListener("click", () => {
   if (multiplayerModeBtn.disabled) return;
   multiplayerModeBtn.classList.add("active");
+  learnModeBtn.classList.remove("active");
   practiceModeBtn.classList.remove("active");
+  learnPanel.classList.add("hidden");
   multiplayerPanel.classList.remove("hidden");
   practicePanel.classList.add("hidden");
 });
@@ -1365,6 +2348,9 @@ createRoomModal.addEventListener("click", (event) => {
 });
 createRoomForm.addEventListener("submit", createRoom);
 backToLobbyBtn.addEventListener("click", () => {
+  const prefs = loadPrefs();
+  if (prefs?.gameType) selectGameType(prefs.gameType, { persist: false });
+  setLobbyMode(prefs?.lobbyMode || "practice", { persist: false });
   renderLobby();
   showPanel("lobby");
 });
@@ -1386,8 +2372,7 @@ if (revealDiceBtn) {
 speedInput.addEventListener("click", (event) => {
   const button = event.target.closest("[data-speed]");
   if (!button) return;
-  speedInput.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", item === button));
-  updateSpeed();
+  selectSpeed(button.dataset.speed);
 });
 topbarMenu?.addEventListener("click", (event) => {
   if (event.target.closest("button")) topbarMenu.open = false;
@@ -1402,6 +2387,43 @@ logOverlay.addEventListener("click", (event) => {
   if (event.target === logOverlay) closeModal(logOverlay);
 });
 
+window.addEventListener("popstate", () => {
+  ensureUser();
+  const panel = routeToPanel();
+  if (panel === "game" && !state.inGame) {
+    renderLobby();
+    showPanel("lobby", { replace: true });
+    return;
+  }
+  if (panel === "lobby") renderLobby();
+  showPanel(panel, { route: false });
+});
+
+async function bootRoute() {
+  ensureUser();
+  const prefs = loadPrefs();
+  selectSpeed(prefs?.speed || "normal", { persist: false });
+  if (prefs?.gameType) selectGameType(prefs.gameType, { persist: false });
+  setLobbyMode(prefs?.lobbyMode || "practice", { persist: false });
+  const savedSession = loadSession();
+  const panel = routeToPanel();
+  if (panel === "login") {
+    renderLobby();
+    showPanel("lobby", { replace: true });
+    return;
+  }
+  if (panel === "game" && !state.inGame) {
+    const restored = await restoreSavedGameSession(savedSession);
+    if (!restored) {
+      renderLobby();
+      showPanel("lobby", { replace: true });
+    }
+    return;
+  }
+  if (panel === "lobby") renderLobby();
+  showPanel(panel, { replace: true });
+}
+
 makeNamesEditor();
-updateSpeed();
-renderLobby();
+selectGameType(state.gameType, { persist: false });
+bootRoute();

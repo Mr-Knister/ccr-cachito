@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cachito San Juan XXIII</title>
-  <link rel="stylesheet" href="styles.css?v=guide-solid-1">
+  <link rel="stylesheet" href="styles.css?v=tortuga-ojos-1">
 </head>
 <body>
   <main class="app-shell">
@@ -17,16 +17,16 @@
 
       <form class="access-card" id="loginForm">
         <span class="eyebrow">Acceso</span>
-        <h2>Entrar a la mesa</h2>
+        <h2>Usuario</h2>
         <label>
-          Username
-          <input id="usernameInput" autocomplete="username" value="">
+          Usuario
+          <input id="usernameInput" autocomplete="username" value="" required>
         </label>
         <label>
-          Nombre visible
-          <input id="displayNameInput" autocomplete="name" value="">
+          Clave
+          <input id="passwordInput" type="password" autocomplete="current-password" value="">
         </label>
-        <button class="primary-action" type="submit">Acceder</button>
+        <button class="primary-action" type="submit">Guardar usuario</button>
       </form>
     </section>
 
@@ -38,29 +38,63 @@
       </div>
 
       <section class="lobby-card">
-        <header class="lobby-user-card">
-          <div>
-            <span class="eyebrow">Usuario</span>
-            <h2 id="userTitle">-</h2>
-            <p id="userMeta">-</p>
+        <header class="lobby-user-card" id="lobbyUserCard">
+          <div class="lobby-user-actions">
+            <button id="logoutBtn" type="button" aria-label="Cambiar usuario" title="Cambiar usuario">&#9998;</button>
+            <button class="primary-action hidden" id="saveUserEditBtn" type="button" aria-label="Guardar usuario" title="Guardar">&#10003;</button>
+            <button class="hidden" id="cancelUserEditBtn" type="button" aria-label="Cancelar edicion" title="Cancelar">&times;</button>
           </div>
-          <button id="logoutBtn" type="button">Salir</button>
+          <div class="lobby-user-info">
+            <h2 id="userTitle">-</h2>
+            <input class="user-name-edit hidden" id="userNameEditInput" autocomplete="name" value="">
+          </div>
         </header>
 
         <section class="play-hub">
-          <div class="mode-tabs" role="tablist" aria-label="Modo de juego">
-            <button class="active" id="practiceModeBtn" type="button">Practica</button>
-            <button id="multiplayerModeBtn" type="button" disabled>Multijugador</button>
+          <div class="game-type-picker" aria-label="Tipo de juego">
+            <button class="active" type="button" data-game-type="callao" aria-pressed="true">Callao</button>
+            <button type="button" data-game-type="tortuga" aria-pressed="false">Tortuga</button>
+            <button type="button" data-game-type="ojos-azules" aria-pressed="false">Ojos azules</button>
           </div>
+
+          <div class="mode-tabs" role="tablist" aria-label="Modo de juego">
+            <button id="learnModeBtn" type="button">Aprender</button>
+            <button class="active" id="practiceModeBtn" type="button">Practicar</button>
+            <button class="hidden" id="multiplayerModeBtn" type="button" disabled>Multijugador</button>
+          </div>
+
+          <section class="mode-panel learn-panel hidden" id="learnPanel">
+            <div class="mode-panel-head">
+              <span class="eyebrow">Aprender Callao</span>
+            </div>
+            <div class="learn-actions">
+              <button type="button" data-learn-mode="recognize">
+                <strong>Reconocer jugada</strong>
+                <span>Elige que resultado salio entre varias opciones.</span>
+              </button>
+              <button type="button" data-learn-mode="stand">
+                <strong>Cuando plantarme</strong>
+                <span>Guarda, tira o plantate y recibe consejo.</span>
+              </button>
+              <button type="button" data-learn-mode="beat">
+                <strong>Vencer al enemigo</strong>
+                <span>Intenta superar una jugada media o buena.</span>
+              </button>
+            </div>
+          </section>
 
           <section class="mode-panel" id="practicePanel">
             <div class="mode-panel-head">
-              <span class="eyebrow">Practica</span>
+              <span class="eyebrow">Practicar</span>
               <p>Partida local rapida con valores por defecto.</p>
             </div>
             <button class="guide-button" id="guideBtn" type="button">Guia</button>
             <div class="practice-actions">
               <button class="primary-action" id="practiceIndividualBtn" type="button">Individual</button>
+              <label class="players-control">
+                <span>Jugadores</span>
+                <input id="practicePlayersInput" type="number" min="2" max="8" value="5">
+              </label>
               <button id="practiceTeamsBtn" type="button">Equipos</button>
             </div>
           </section>
@@ -164,7 +198,7 @@
           </div>
         </div>
         <details class="topbar-menu">
-          <summary aria-label="Acciones">≡</summary>
+          <summary aria-label="Acciones">&equiv;</summary>
           <div class="topbar-actions">
             <button id="logToggleBtn" type="button">Ver bitacora</button>
             <button id="resetMatchBtn" type="button">Resetear</button>
@@ -186,6 +220,12 @@
             <section class="dice-zone rolling-zone">
               <span>Para lanzar</span>
               <div class="dice-row split-row" id="rollingDiceRow"></div>
+            </section>
+            <section class="recognize-panel hidden" id="recognizePanel" aria-live="polite">
+              <span>¿Qué jugada obtuviste?</span>
+              <div class="recognize-options" id="recognizeOptions"></div>
+              <p id="recognizeFeedback"></p>
+              <button class="primary-action hidden" id="recognizeNextBtn" type="button">Siguiente</button>
             </section>
             <div class="cup" id="cup">
               <div class="cup-mouth"></div>
@@ -390,6 +430,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=guide-popup-1"></script>
+  <script src="app.js?v=tortuga-ojos-1"></script>
 </body>
 </html>
